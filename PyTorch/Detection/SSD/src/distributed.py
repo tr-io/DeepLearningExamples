@@ -2,6 +2,14 @@ import torch
 from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
 import torch.distributed as dist
 from torch.nn.modules import Module
+from .hadamard import random_hadamard_encode, random_hadamard_decode
+
+seed = 42
+sgen = torch.Generator(device='cpu')
+sgen.manual_seed(seed)
+
+rgen = torch.Generator(device='cpu')
+rgen.manual_seed(seed)
 
 '''
 This version of DistributedDataParallel is designed to be used in conjunction with the multiproc.py
@@ -14,11 +22,13 @@ and will be allreduced at the finish of the backward pass.
 '''
 class DistributedDataParallel(Module):
 
-    def __init__(self, module):
+    def __init__(self, module, hadamard, dc=0.0):
         super(DistributedDataParallel, self).__init__()
         self.warn_on_half = True if dist._backend == dist.dist_backend.GLOO else False
 
         self.module = module
+        self.hadamard = hadamard
+        self.dc = dc
 
         for p in self.module.state_dict().values():
             if not torch.is_tensor(p):
@@ -47,7 +57,26 @@ class DistributedDataParallel(Module):
                     bucket = buckets[tp]
                     grads = [param.grad.data for param in bucket]
                     coalesced = _flatten_dense_tensors(grads)
-                    dist.all_reduce(coalesced)
+                    # modify here
+                    # flattened already
+                    # apply hadamard transform if possible
+                    dim = len(coalesced)
+                    if self.hadamard == 1:
+                        coalesced = random_hadamard_encode(coalesced, dim, prng=sgen)
+                        print("Transformed vec: ", coalesced)
+
+                    # drop individual elements in gradient
+                    # always will drop gradients
+                    ndropped = int(np.round(self.dc * coalesced.numel()))
+                    dropped_idx = torch.randperm(dim)[:ndropped]
+                    coalesced[dropped_idx] = 0
+
+                    dist.all_reduce(coalesced) # do all reduce
+
+                    # now do inverse hadamard transform
+                    if self.hadamard == 1:
+                        coalesced = random_hadamard_decode(coalesced, dim, prng=rgen, frac=dim / (dim-ndropped))
+
                     coalesced /= dist.get_world_size()
                     for buf, synced in zip(grads, _unflatten_dense_tensors(coalesced, grads)):
                         buf.copy_(synced)
