@@ -17,16 +17,6 @@ import matplotlib.pyplot as plt
 #from torch.nn.parallel import DistributedDataParallel as DDP
 from src.distributed import DistributedDataParallel as DDP
 
-"""
-# Hadamard seed stuff
-seed = 42
-sgen = torch.Generator(device='cpu')
-sgen.manual_seed(seed)
-
-rgen = torch.Generator(device='cpu')
-rgen.manual_seed(seed)
-"""
-
 def cleanup():
     dist.destroy_process_group()
 
@@ -84,7 +74,8 @@ def accuracy(predictions, labels):
 def train(index, args):
     # multiprocessing stuff
     # get rank
-    rank = args.nr # index of the worker
+    print("In train method!")
+    rank = args.nr * args.gpus + index # rank of the worker
     drop_chance = args.drop_chance # drop chance
     runs = args.runs # number of runs to do
     hadamard = args.hadamard # whether or not to use the hadamard transform
@@ -98,22 +89,23 @@ def train(index, args):
     agg_test_acc = [['']]
     agg_test_acc[0].append("Test Accuracy")
 
-    torch.cuda.set_device(rank)
+    torch.cuda.set_device(index)
 
-    dist.init_process_group(backend="gloo", world_size=args.nodes, rank=rank)
+    print("Initializing process group")
+    dist.init_process_group(backend="gloo", world_size=args.world_size, rank=rank)
 
     # start runs
+    print("Starting runs!")
     for run in range(runs):
         print("Training model, run:", run)
         train_acc_time = [] # training accuracy over time
         test_acc_time = [] # test accuracy over time
         #torch.manual_seed(0) # set seed
         model = FashionNet() # using fashionMNIST model now
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu") # set it to cpu
-        model.to(device)
+        model.cuda(index)
         batch_size = 128
         # define loss function (criterion) and optimizer
-        criterion = nn.CrossEntropyLoss().to(device)
+        criterion = nn.CrossEntropyLoss()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.012)
 
         # wrap the model
@@ -150,8 +142,8 @@ def train(index, args):
             train_loss = 0.0
             train_acc = 0.0
             for i, (images, labels) in enumerate(train_loader):
-                images = images.to(device)
-                labels = labels.to(device)
+                images = images.cuda(non_blocking=True)
+                labels = labels.cuda(non_blocking=True)
                 # Forward pass
                 outputs = model(images)
                 loss = criterion(outputs, labels)
@@ -223,8 +215,8 @@ def train(index, args):
             test_loss = 0.0
             test_acc = 0.0
             for i, (images, labels) in enumerate(test_loader):
-                images = images.to(device)
-                labels = labels.to(device)
+                images = images.cuda(non_blocking=True)
+                labels = labels.cuda(non_blocking=True)
                 outputs = model(images)
                 loss = criterion(outputs, labels)
                 test_loss += loss.item()
@@ -259,6 +251,16 @@ def train(index, args):
     with open(acc_abspath, 'w') as f:
         df_acc.to_csv(f)
         
+def find_free_port():
+    """ https://stackoverflow.com/questions/1365265/on-localhost-how-do-i-pick-a-free-port-number """
+    import socket
+    from contextlib import closing
+
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.bind(('', 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return str(s.getsockname()[1])
+
 def main():
     parser = argparse.ArgumentParser()
     # nodes are the number of machines/workers
@@ -283,10 +285,17 @@ def main():
     parser.add_argument('-hd', '--hadamard', default=0, type=int, help='Use hadamard transform? 1 for yes, 0 for no (default is 0)')
     args = parser.parse_args()
 
+    args.world_size = args.gpus * args.nodes
+
+    print("Running DDP!")
+
     # multi processing stuff
-    os.environ['MASTER_ADDR'] = '172.31.18.167'
-    os.environ['MASTER_PORT'] = '12355'
-    mp.spawn(train, nprocs=1, args=(args,))
+    os.environ['MASTER_ADDR'] = '127.0.0.1'
+    os.environ['MASTER_PORT'] = find_free_port()
+    print(f"{os.environ['MASTER_ADDR']}:{os.environ['MASTER_PORT']}")
+    print("Spawning nodes")
+    #mp.spawn(train, nprocs=args.world_size, args=(args,))
+    train(args.nr, args)
 
 if __name__ == '__main__':
     main()
