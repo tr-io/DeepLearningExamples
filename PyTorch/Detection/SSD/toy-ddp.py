@@ -15,7 +15,11 @@ import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 
 #from torch.nn.parallel import DistributedDataParallel as DDP
-from src.distributed import DistributedDataParallel as DDP
+# apex things
+from apex.parallel.LARC import LARC
+from apex import amp
+from apex.parallel import DistributedDataParallel as DDP
+from apex.fp16_utils import *
 
 def cleanup():
     dist.destroy_process_group()
@@ -89,10 +93,12 @@ def train(index, args):
     agg_test_acc = [['']]
     agg_test_acc[0].append("Test Accuracy")
 
+    print("Setting device")
     torch.cuda.set_device(index)
 
     print("Initializing process group")
-    dist.init_process_group(backend="gloo", world_size=args.world_size, rank=rank)
+    # change these
+    dist.init_process_group(backend="nccl", init_method='env://')
 
     # start runs
     print("Starting runs!")
@@ -100,16 +106,18 @@ def train(index, args):
         print("Training model, run:", run)
         train_acc_time = [] # training accuracy over time
         test_acc_time = [] # test accuracy over time
-        #torch.manual_seed(0) # set seed
         model = FashionNet() # using fashionMNIST model now
-        model.cuda(index)
+        model.cuda()
         batch_size = 128
         # define loss function (criterion) and optimizer
-        criterion = nn.CrossEntropyLoss()
+        criterion = nn.CrossEntropyLoss().cuda()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.012)
 
         # wrap the model
-        model = DDP(model, hadamard, drop_chance)
+        model = DDP(model, hadamard=hadamard, drop_chance=drop_chance)
+
+        # initialize AMP
+        model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
 
         # Data loading code
         # downloading fashion mnist now
@@ -137,57 +145,22 @@ def train(index, args):
 
         start = datetime.now()
         total_step = len(train_loader)
-        model.train()
+        #model.train()
         for epoch in range(args.epochs):
             train_loss = 0.0
             train_acc = 0.0
             for i, (images, labels) in enumerate(train_loader):
-                images = images.cuda(non_blocking=True)
-                labels = labels.cuda(non_blocking=True)
+                optimizer.zero_grad()
+                images = images.cuda()
+                labels = labels.cuda()
                 # Forward pass
                 outputs = model(images)
                 loss = criterion(outputs, labels)
 
                 # Backward and optimize
-                optimizer.zero_grad()
-                loss.backward()
-                # DEPRECATED: wrong way to do it
-                """
-                if hadamard == 1:
-                    print("Using hadamard!")
-                    
-                    for p in model.parameters():
-                        print(p.grad.size())
-                        vec_shape = p.grad.size() # save gradient size so we can return it
-                        print("Initial grad vec: ", p.grad)
-                        vec = torch.flatten(p.grad) # flatten to 1 dimension before applying Hadamard transform
-                        print("Flattened vec: ", vec)
-                        dim = len(vec)
-                        h_vec = random_hadamard_encode(vec, dim, prng=sgen)
-                        print("Transformed vec: ", h_vec)
-                        # drop individual elements in gradient
-                        # individual 'axes' or 'dimensions', so to speak
-                        ndropped = int(np.round(drop_chance * vec.numel()))
-                        dropped_idx = torch.randperm(dim)[:ndropped]
-                        h_vec[dropped_idx] = 0
-                        # inverse hadamard transform
-                        decompressed_vec = random_hadamard_decode(h_vec, dim, prng=rgen, frac=dim/(dim-ndropped))
-                        print("restored vec: ", decompressed_vec)
-                        print(decompressed_vec.size())
-                        # now reshape and save back to grad
-                        reshaped_vec = torch.reshape(decompressed_vec, vec_shape)
-                        p.grad = reshaped_vec
-                else:
-                    num_params = sum(1 for p in model.parameters()) # get the number of weights
-                    r_vec = np.random.choice([0, 1], size=num_params, p=[drop_chance, 1-drop_chance]) # create random drop vector
-
-                    # loop through model parameters (weights) and change gradients
-                    j = 0 # index for iterating through r_vec
-                    for p in model.parameters():
-                        if r_vec[j] == 0:
-                            p.grad *= 0 # drop entire gradient
-                        j += 1 # increment iterator
-                """
+                # using amp
+                with amp.scale_loss(loss, optimizer) as scaled_loss:
+                    scaled_loss.backward()
                 optimizer.step()
                 # calculate accuracy
                 train_loss += loss.item()
@@ -215,8 +188,8 @@ def train(index, args):
             test_loss = 0.0
             test_acc = 0.0
             for i, (images, labels) in enumerate(test_loader):
-                images = images.cuda(non_blocking=True)
-                labels = labels.cuda(non_blocking=True)
+                images = images.cuda()
+                labels = labels.cuda()
                 outputs = model(images)
                 loss = criterion(outputs, labels)
                 test_loss += loss.item()
@@ -290,11 +263,13 @@ def main():
     print("Running DDP!")
 
     # multi processing stuff
-    os.environ['MASTER_ADDR'] = '127.0.0.1'
-    os.environ['MASTER_PORT'] = find_free_port()
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+    os.environ['WORLD_SIZE'] = str(args.world_size)
+    os.environ['RANK'] = str(args.nr)
     print(f"{os.environ['MASTER_ADDR']}:{os.environ['MASTER_PORT']}")
     print("Spawning nodes")
-    #mp.spawn(train, nprocs=args.world_size, args=(args,))
+    #mp.spawn(train, nprocs=1, args=(args,))
     train(args.nr, args)
 
 if __name__ == '__main__':
