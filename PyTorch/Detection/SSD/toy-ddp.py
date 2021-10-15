@@ -94,7 +94,7 @@ def train(index, args):
     agg_test_acc[0].append("Test Accuracy")
 
     print("Setting device")
-    torch.cuda.set_device(index)
+    torch.cuda.set_device(0)
 
     print("Initializing process group")
     # change these
