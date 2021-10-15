@@ -263,7 +263,7 @@ def main():
     print("Running DDP!")
 
     # multi processing stuff
-    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_ADDR'] = '172.31.18.167'
     os.environ['MASTER_PORT'] = '12355'
     os.environ['WORLD_SIZE'] = str(args.world_size)
     os.environ['RANK'] = str(args.nr)
