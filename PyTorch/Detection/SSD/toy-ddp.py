@@ -241,6 +241,7 @@ def find_free_port():
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--local_rank", default=0, type=int)
     # nodes are the number of machines/workers
     parser.add_argument('-n', '--nodes', default=1, type=int, metavar='N')
     # gpu is the number of gpus per machine to use
@@ -270,7 +271,7 @@ def main():
     # multi processing stuff
     #os.environ['MASTER_ADDR'] = '172.31.18.167'
     #os.environ['MASTER_PORT'] = '12355'
-    #os.environ['NCCL_SOCKET_IFNAME'] = 'ens5'
+    os.environ['NCCL_SOCKET_IFNAME'] = 'ens5'
     os.environ['WORLD_SIZE'] = torch.distributed.get_world_size()
     os.environ['RANK'] = str(args.nr)
     print(f"{os.environ['MASTER_ADDR']}:{os.environ['MASTER_PORT']}")
