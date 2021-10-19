@@ -98,7 +98,7 @@ def train(index, args):
 
     print("Initializing process group")
     # change these
-    dist.init_process_group(backend="nccl", init_method='env://')
+    dist.init_process_group(backend="gloo", init_method='env://')
 
     print("Getting world size")
     args.world_size = torch.distributed.get_world_size()
