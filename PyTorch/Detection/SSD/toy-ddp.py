@@ -79,7 +79,7 @@ def train(index, args):
     # multiprocessing stuff
     # get rank
     print("In train method!")
-    rank = args.nr * args.gpus + index # rank of the worker
+    gpu = args.local_rank
     drop_chance = args.drop_chance # drop chance
     runs = args.runs # number of runs to do
     hadamard = args.hadamard # whether or not to use the hadamard transform
@@ -94,11 +94,14 @@ def train(index, args):
     agg_test_acc[0].append("Test Accuracy")
 
     print("Setting device")
-    torch.cuda.set_device(0)
+    torch.cuda.set_device(gpu)
 
     print("Initializing process group")
     # change these
     dist.init_process_group(backend="nccl", init_method='env://')
+
+    print("Getting world size")
+    args.world_size = torch.distributed.get_world_size()
 
     # start runs
     print("Starting runs!")
@@ -107,19 +110,19 @@ def train(index, args):
         train_acc_time = [] # training accuracy over time
         test_acc_time = [] # test accuracy over time
         model = FashionNet() # using fashionMNIST model now
-        model.cuda()
+        model = model.cuda()
         batch_size = 128
         # define loss function (criterion) and optimizer
         criterion = nn.CrossEntropyLoss().cuda()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.012)
 
         # initialize AMP
-        print("Initializing AMP")
-        model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
+        #print("Initializing AMP")
+        #model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
 
         # wrap the model
         print("Creating model")
-        model = DDP(model, hadamard=hadamard, drop_chance=drop_chance)
+        model = DDP(model, hadamard=hadamard, drop_chance=drop_chance, delay_allreduce=True)
 
         # Data loading code
         # downloading fashion mnist now
@@ -241,18 +244,19 @@ def find_free_port():
 
 def main():
     parser = argparse.ArgumentParser()
+    # local rank added by pytorch launcher
     parser.add_argument("--local_rank", default=0, type=int)
     # nodes are the number of machines/workers
-    parser.add_argument('-n', '--nodes', default=1, type=int, metavar='N')
+    #parser.add_argument('-n', '--nodes', default=1, type=int, metavar='N')
     # gpu is the number of gpus per machine to use
     # ignore GPU for now, since we're doing cpu distributed
-    parser.add_argument('-g', '--gpus', default=1, type=int,
-                        help='number of gpus per node')
+    #parser.add_argument('-g', '--gpus', default=1, type=int,
+                        #help='number of gpus per node')
     # current rank of this node
     # 0 is the master process
     # goes from 0-args.nodes - 1
-    parser.add_argument('-nr', '--nr', default=0, type=int,
-                        help='ranking within the nodes')
+    #parser.add_argument('-nr', '--nr', default=0, type=int,
+                        #help='ranking within the nodes')
     # number of runs to do
     parser.add_argument('-rn', '--runs', default=10, type=int, help='number of runs to do training')
     # drop chance
@@ -264,20 +268,15 @@ def main():
     parser.add_argument('-hd', '--hadamard', default=0, type=int, help='Use hadamard transform? 1 for yes, 0 for no (default is 0)')
     args = parser.parse_args()
 
-    args.world_size = int(args.gpus) * int(args.nodes)
-
     print("Running DDP!")
+    print(f"Local rank: {args.local_rank}")
 
     # multi processing stuff
     #os.environ['MASTER_ADDR'] = '172.31.18.167'
     #os.environ['MASTER_PORT'] = '12355'
-    os.environ['NCCL_SOCKET_IFNAME'] = 'ens5'
-    os.environ['WORLD_SIZE'] = str(args.world_size)
-    os.environ['RANK'] = str(args.nr)
-    print(f"{os.environ['MASTER_ADDR']}:{os.environ['MASTER_PORT']}")
-    print("Spawning nodes")
-    #mp.spawn(train, nprocs=1, args=(args,))
-    train(args.nr, args)
+    #os.environ['NCCL_SOCKET_IFNAME'] = 'ens5'
+    #os.environ['RANK'] = str(args.local_rank)
+    train(args.local_rank, args)
 
 if __name__ == '__main__':
     main()
