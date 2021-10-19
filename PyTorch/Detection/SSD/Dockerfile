@@ -16,4 +16,8 @@ COPY ./setup.py .
 COPY ./csrc ./csrc
 RUN pip install .
 
+# Copy modified apex files to PyTorch dir
+COPY ./distributed-edit.py /opt/conda/lib/python3.6/site-packages/apex/parallel/distributed.py
+COPY ./hadamard.py /opt/conda/lib/python3.6/site-packages/apex/parallel/hadamard.py
+
 COPY . .
