@@ -113,13 +113,13 @@ def train(index, args):
         criterion = nn.CrossEntropyLoss().cuda()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.012)
 
-        # wrap the model
-        print("Creating model and initializing AMP")
-        model = DDP(model, hadamard=hadamard, drop_chance=drop_chance)
-
         # initialize AMP
         print("Initializing AMP")
         model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
+
+        # wrap the model
+        print("Creating model")
+        model = DDP(model, hadamard=hadamard, drop_chance=drop_chance)
 
         # Data loading code
         # downloading fashion mnist now
