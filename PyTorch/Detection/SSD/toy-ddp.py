@@ -276,6 +276,7 @@ def main():
     #os.environ['MASTER_PORT'] = '12355'
     #os.environ['NCCL_SOCKET_IFNAME'] = 'ens5'
     #os.environ['RANK'] = str(args.local_rank)
+    os.environ['NCCL_DEBUG'] = 'INFO'
     train(args.local_rank, args)
 
 if __name__ == '__main__':
