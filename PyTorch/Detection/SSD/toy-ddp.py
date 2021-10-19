@@ -118,6 +118,7 @@ def train(index, args):
         model = DDP(model, hadamard=hadamard, drop_chance=drop_chance)
 
         # initialize AMP
+        print("Initializing AMP")
         model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
 
         # Data loading code
