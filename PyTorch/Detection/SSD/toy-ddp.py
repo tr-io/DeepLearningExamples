@@ -264,7 +264,7 @@ def main():
     parser.add_argument('-hd', '--hadamard', default=0, type=int, help='Use hadamard transform? 1 for yes, 0 for no (default is 0)')
     args = parser.parse_args()
 
-    args.world_size = args.gpus * args.nodes
+    args.world_size = int(args.gpus) * int(args.nodes)
 
     print("Running DDP!")
 
@@ -272,7 +272,7 @@ def main():
     #os.environ['MASTER_ADDR'] = '172.31.18.167'
     #os.environ['MASTER_PORT'] = '12355'
     os.environ['NCCL_SOCKET_IFNAME'] = 'ens5'
-    os.environ['WORLD_SIZE'] = args.world_size
+    os.environ['WORLD_SIZE'] = str(args.world_size)
     os.environ['RANK'] = str(args.nr)
     print(f"{os.environ['MASTER_ADDR']}:{os.environ['MASTER_PORT']}")
     print("Spawning nodes")
