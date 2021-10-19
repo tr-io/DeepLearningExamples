@@ -98,7 +98,7 @@ def train(index, args):
 
     print("Initializing process group")
     # change these
-    dist.init_process_group(backend="gloo", init_method='env://')
+    dist.init_process_group(backend="nccl", init_method='env://')
 
     print("Getting world size")
     args.world_size = torch.distributed.get_world_size()
@@ -274,7 +274,7 @@ def main():
     # multi processing stuff
     #os.environ['MASTER_ADDR'] = '172.31.18.167'
     #os.environ['MASTER_PORT'] = '12355'
-    #os.environ['NCCL_SOCKET_IFNAME'] = 'ens5'
+    os.environ['NCCL_SOCKET_IFNAME'] = 'ens5'
     #os.environ['RANK'] = str(args.local_rank)
     os.environ['NCCL_DEBUG'] = 'INFO'
     train(args.local_rank, args)
