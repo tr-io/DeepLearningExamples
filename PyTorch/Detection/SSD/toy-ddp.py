@@ -114,6 +114,7 @@ def train(index, args):
         optimizer = torch.optim.SGD(model.parameters(), lr=0.012)
 
         # wrap the model
+        print("Creating model and initializing AMP")
         model = DDP(model, hadamard=hadamard, drop_chance=drop_chance)
 
         # initialize AMP
@@ -121,6 +122,7 @@ def train(index, args):
 
         # Data loading code
         # downloading fashion mnist now
+        print("Downloading dataset")
         fashion_dataset = torchvision.datasets.FashionMNIST(root='./data',
                                                 train=True,
                                                 transform=transforms.ToTensor(),
@@ -130,6 +132,7 @@ def train(index, args):
 
         # train sampler for "sharding"
         # make sure each process gets a different piece of the data
+        print("Creating sampler")
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, num_replicas=args.nodes, rank=rank)
 
         train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
@@ -146,6 +149,7 @@ def train(index, args):
         start = datetime.now()
         total_step = len(train_loader)
         #model.train()
+        print("Starting epochs")
         for epoch in range(args.epochs):
             train_loss = 0.0
             train_acc = 0.0
