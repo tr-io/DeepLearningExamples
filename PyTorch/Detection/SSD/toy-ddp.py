@@ -270,6 +270,7 @@ def main():
     # multi processing stuff
     os.environ['MASTER_ADDR'] = '172.31.18.167'
     os.environ['MASTER_PORT'] = '12355'
+    os.environ['NCCL_SOCKET_IFNAME'] = 'ens5'
     os.environ['WORLD_SIZE'] = str(args.world_size)
     os.environ['RANK'] = str(args.nr)
     print(f"{os.environ['MASTER_ADDR']}:{os.environ['MASTER_PORT']}")
