@@ -203,10 +203,10 @@ class DistributedDataParallel(Module):
         self.drop_chance = drop_chance
         self.rseed = rseed
         self.sgen = torch.Generator(device='cuda')
-        sgen.manual_seed(seed)
+        self.sgen.manual_seed(self.rseed)
 
         self.rgen = torch.Generator(device='cuda')
-        rgen.manual_seed(seed)
+        self.rgen.manual_seed(self.rseed)
 
         self.allreduce_different_streams = (num_allreduce_streams > 1)
         self.num_allreduce_streams = num_allreduce_streams
@@ -439,6 +439,7 @@ class DistributedDataParallel(Module):
 
 
     def allreduce_bucket(self, bucket, bucket_idx, force_default_stream):
+        print("Allreducing")
         tensor = flatten(bucket)
 
         if force_default_stream:
@@ -453,6 +454,7 @@ class DistributedDataParallel(Module):
         # flattened already
         # apply hadamard transform if possible
         dim = len(tensor)
+        print("Checking Hadamard")
         if self.hadamard == 1:
             tensor = random_hadamard_encode(tensor, dim, prng=self.sgen)
 
@@ -461,12 +463,17 @@ class DistributedDataParallel(Module):
         # 1. create seed for random
         torch.manual_seed(self.rseed)
         # 2. create drop vector
-        drop_vec = torch.cuda.FloatTensor(tensor.numel()).uniform_() > drop_chance
+        print("Creating drop vector")
+        drop_vec = torch.rand(tensor.numel())
+        drop_vec = (drop_vec < self.drop_chance).type(torch.uint8)
         print(f"Drop vec: {drop_vec}")
-        print(f"Drop vec shape: {drop_vec.shape}")
         # 3. drop
-        print(f"Tensor shape: {tensor.shape}")
-        tensor = tensor * drop_vec
+        print("Multiplying drop vector...")
+        mult_tensor = tensor.mul(drop_vec)
+        print(f"Multiplied tensor: {mult_tensor}")
+        print("Setting tensor to mult...")
+        tensor = mult_tensor
+        print("Doing other allreduce steps...")
 
         with torch.cuda.stream(bucket_stream):
             # self.main_stream.wait_stream(torch.cuda.current_stream())
@@ -507,6 +514,7 @@ class DistributedDataParallel(Module):
             tensor.record_stream(bucket_stream)
 
         # do inverse hadamard
+        print("Checking inverse hadamard")
         if self.hadamard == 1:
             tensor = random_hadamard_decode(tensor, dim, prng=self.rgen, frac=dim / (dim-ndropped))
 

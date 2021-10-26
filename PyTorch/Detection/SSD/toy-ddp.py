@@ -123,7 +123,7 @@ def train(index, args):
 
         # wrap the model
         print("Creating model")
-        model = DDP(model, hadamard=hadamard, drop_chance=drop_chance, rseed=node_rank)
+        model = DDP(model, hadamard=hadamard, drop_chance=drop_chance, rseed=node_rank, delay_allreduce=True)
 
         # Data loading code
         # downloading fashion mnist now
@@ -138,7 +138,7 @@ def train(index, args):
         # train sampler for "sharding"
         # make sure each process gets a different piece of the data
         print("Creating sampler")
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, num_replicas=args.nodes, rank=rank)
+        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, num_replicas=args.nodes)
 
         train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
                                                 batch_size=batch_size,
@@ -168,8 +168,7 @@ def train(index, args):
 
                 # Backward and optimize
                 # using amp
-                with amp.scale_loss(loss, optimizer) as scaled_loss:
-                    scaled_loss.backward()
+                loss.backward()
                 optimizer.step()
                 # calculate accuracy
                 train_loss += loss.item()
@@ -248,7 +247,7 @@ def main():
     # local rank added by pytorch launcher
     parser.add_argument("--local_rank", default=0, type=int)
     # nodes are the number of machines/workers
-    #parser.add_argument('-n', '--nodes', default=1, type=int, metavar='N')
+    parser.add_argument('-n', '--nodes', default=1, type=int, metavar='N')
     # gpu is the number of gpus per machine to use
     # ignore GPU for now, since we're doing cpu distributed
     #parser.add_argument('-g', '--gpus', default=1, type=int,
@@ -276,7 +275,7 @@ def main():
     # multi processing stuff
     #os.environ['MASTER_ADDR'] = '172.31.18.167'
     #os.environ['MASTER_PORT'] = '12355'
-    os.environ['NCCL_SOCKET_IFNAME'] = 'ens5'
+    #os.environ['NCCL_SOCKET_IFNAME'] = 'ens5'
     #os.environ['RANK'] = str(args.local_rank)
     os.environ['NCCL_DEBUG'] = 'INFO'
     train(args.local_rank, args)
