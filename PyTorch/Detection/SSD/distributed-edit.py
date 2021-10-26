@@ -178,7 +178,8 @@ class DistributedDataParallel(Module):
                  prof=False,
                  hadamard=0,
                  drop_chance=0.0,
-                 rseed=1.0):
+                 rseed=1.0,
+                 tail=0):
         super(DistributedDataParallel, self).__init__()
 
         # Backward/forward compatibility around
@@ -207,6 +208,8 @@ class DistributedDataParallel(Module):
 
         self.rgen = torch.Generator(device='cuda')
         self.rgen.manual_seed(self.rseed)
+
+        self.tail = tail
 
         self.allreduce_different_streams = (num_allreduce_streams > 1)
         self.num_allreduce_streams = num_allreduce_streams
@@ -439,7 +442,7 @@ class DistributedDataParallel(Module):
 
 
     def allreduce_bucket(self, bucket, bucket_idx, force_default_stream):
-        print("Allreducing")
+        #print("Allreducing")
         tensor = flatten(bucket)
 
         if force_default_stream:
@@ -454,7 +457,7 @@ class DistributedDataParallel(Module):
         # flattened already
         # apply hadamard transform if possible
         dim = len(tensor)
-        print("Checking Hadamard")
+        #print("Checking Hadamard")
         if self.hadamard == 1:
             tensor = random_hadamard_encode(tensor, dim, prng=self.sgen)
 
@@ -463,6 +466,16 @@ class DistributedDataParallel(Module):
         # 1. create seed for random
         torch.manual_seed(self.rseed)
         # 2. create drop vector
+        ndropped = int(np.round(self.drop_chance * tensor.numel()))
+        if self.tail == 1:
+            drop_range = dim - ndropped
+            dropped_idx = torch.arange(0, dim)
+            dropped_idx = dropped_idx[-ndropped:]
+        else:
+            dropped_idx = torch.randperm(dim)[:ndropped]
+        #print(f"drop vec: {dropped_idx}")
+        tensor[dropped_idx] = 0
+        """
         print("Creating drop vector")
         drop_vec = torch.rand(tensor.numel())
         drop_vec = (drop_vec < self.drop_chance).type(torch.uint8)
@@ -474,6 +487,7 @@ class DistributedDataParallel(Module):
         print("Setting tensor to mult...")
         tensor = mult_tensor
         print("Doing other allreduce steps...")
+        """
 
         with torch.cuda.stream(bucket_stream):
             # self.main_stream.wait_stream(torch.cuda.current_stream())
@@ -514,7 +528,7 @@ class DistributedDataParallel(Module):
             tensor.record_stream(bucket_stream)
 
         # do inverse hadamard
-        print("Checking inverse hadamard")
+        #print("Checking inverse hadamard")
         if self.hadamard == 1:
             tensor = random_hadamard_decode(tensor, dim, prng=self.rgen, frac=dim / (dim-ndropped))
 

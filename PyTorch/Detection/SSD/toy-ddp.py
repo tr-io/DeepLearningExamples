@@ -84,6 +84,7 @@ def train(index, args):
     runs = args.runs # number of runs to do
     hadamard = args.hadamard # whether or not to use the hadamard transform
     node_rank = args.nr
+    tail = args.tail_drops
 
     # setup data collection
     # aggregate training accuracy
@@ -123,7 +124,7 @@ def train(index, args):
 
         # wrap the model
         print("Creating model")
-        model = DDP(model, hadamard=hadamard, drop_chance=drop_chance, rseed=node_rank, delay_allreduce=True)
+        model = DDP(model, hadamard=hadamard, drop_chance=drop_chance, rseed=node_rank, tail=tail, delay_allreduce=True)
 
         # Data loading code
         # downloading fashion mnist now
@@ -191,7 +192,7 @@ def train(index, args):
         agg_acc_stats.append(train_acc_time)
         print("Training run", run, "complete in: " + str(datetime.now() - start))
         # run on test set if worker 0
-        if rank == 0:
+        if node_rank == 0:
             model.eval()
             test_loss = 0.0
             test_acc = 0.0
@@ -212,14 +213,19 @@ def train(index, args):
             test_acc_time.insert(0, "Run:" + str(run))
             agg_test_acc.append(test_acc_time)
 
-    if rank == 0:  
+    if node_rank == 0:  
         # consolidate agg test acc to df
         agg_test_acc = np.array(agg_test_acc)
         df_test_acc = pd.DataFrame(data=agg_test_acc[1:, 1:], index=agg_test_acc[1:, 0], columns=agg_test_acc[0, 1:])
         _dir = os.path.dirname(__file__) # current directory
-        test_acc_path = "data/results/%d-drop-test-acc-ddp.csv" % (int(drop_chance * 100))
-        test_abs_path = os.path.join(_dir, test_acc_path)
-        with open(test_abs_path, 'w') as f:
+        if hadamard == 1:
+            test_acc_path = "/data/%d-drop-hd-tail-test-acc.csv" % (int(drop_chance * 100))
+        else:
+            if tail == 1:
+                test_acc_path = "/data/%d-drop-nohd-tail-test-acc.csv" % (int(drop_chance * 100))
+            else:
+                test_acc_path = "/data/%d-drop-nohd-rand-test-acc.csv" % (int(drop_chance * 100))
+        with open(test_acc_path, 'w') as f:
             df_test_acc.to_csv(f)
 
     # consolidate aggregated training accuracy stats to dataframe
@@ -227,9 +233,14 @@ def train(index, args):
     df_acc = pd.DataFrame(data=agg_acc_stats[1:, 1:], index=agg_acc_stats[1:, 0], columns=agg_acc_stats[0, 1:])
     # save data to files
     _dir = os.path.dirname(__file__) # current directory
-    acc_fpath = "data/results/%d-drop-train-acc-ddp.csv" % (int(drop_chance * 100))
-    acc_abspath = os.path.join(_dir, acc_fpath)
-    with open(acc_abspath, 'w') as f:
+    if hadamard == 1:
+        acc_fpath = "/data/%d-drop-hd-tail-train-acc.csv" % (int(drop_chance * 100))
+    else:
+        if tail == 1:
+            acc_fpath = "/data/%d-drop-nohd-tail-train-acc.csv" % (int(drop_chance * 100))
+        else:
+            acc_fpath = "/data/%d-drop-nohd-rand-train-acc.csv" % (int(drop_chance * 100))
+    with open(acc_fpath, 'w') as f:
         df_acc.to_csv(f)
         
 def find_free_port():
@@ -261,6 +272,8 @@ def main():
     parser.add_argument('-rn', '--runs', default=10, type=int, help='number of runs to do training')
     # drop chance
     parser.add_argument('-dc', '--drop_chance', default=0.0, type=float, help='drop chance for gradients')
+    # tail drops
+    parser.add_argument('-td', '--tail_drops', default=0, type=int, help='do tail drops or no')
     # epochs for training
     parser.add_argument('--epochs', default=2, type=int, metavar='N',
                         help='number of total epochs to run')
