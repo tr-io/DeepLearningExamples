@@ -10,12 +10,6 @@ import importlib
 from ..multi_tensor_apply import multi_tensor_applier
 from .hadamard import random_hadamard_encode, random_hadamard_decode
 
-seed = 42
-sgen = torch.Generator(device='cuda')
-sgen.manual_seed(seed)
-
-rgen = torch.Generator(device='cuda')
-rgen.manual_seed(seed)
 
 imported_flatten_impl = False
 
@@ -183,7 +177,8 @@ class DistributedDataParallel(Module):
                  gradient_average_split_factor=None,
                  prof=False,
                  hadamard=0,
-                 drop_chance=0.0):
+                 drop_chance=0.0,
+                 rseed=1.0):
         super(DistributedDataParallel, self).__init__()
 
         # Backward/forward compatibility around
@@ -206,6 +201,12 @@ class DistributedDataParallel(Module):
         # new added stuff
         self.hadamard = hadamard
         self.drop_chance = drop_chance
+        self.rseed = rseed
+        self.sgen = torch.Generator(device='cuda')
+        sgen.manual_seed(seed)
+
+        self.rgen = torch.Generator(device='cuda')
+        rgen.manual_seed(seed)
 
         self.allreduce_different_streams = (num_allreduce_streams > 1)
         self.num_allreduce_streams = num_allreduce_streams
@@ -453,13 +454,19 @@ class DistributedDataParallel(Module):
         # apply hadamard transform if possible
         dim = len(tensor)
         if self.hadamard == 1:
-            tensor = random_hadamard_encode(tensor, dim, prng=sgen)
+            tensor = random_hadamard_encode(tensor, dim, prng=self.sgen)
 
         # drop individual elements in gradient
         # always will drop gradients
-        ndropped = int(np.round(self.drop_chance * tensor.numel()))
-        dropped_idx = torch.randperm(dim)[:ndropped]
-        tensor[dropped_idx] = 0
+        # 1. create seed for random
+        torch.manual_seed(self.rseed)
+        # 2. create drop vector
+        drop_vec = torch.cuda.FloatTensor(tensor.numel()).uniform_() > drop_chance
+        print(f"Drop vec: {drop_vec}")
+        print(f"Drop vec shape: {drop_vec.shape}")
+        # 3. drop
+        print(f"Tensor shape: {tensor.shape}")
+        tensor = tensor * drop_vec
 
         with torch.cuda.stream(bucket_stream):
             # self.main_stream.wait_stream(torch.cuda.current_stream())
@@ -501,7 +508,7 @@ class DistributedDataParallel(Module):
 
         # do inverse hadamard
         if self.hadamard == 1:
-            tensor = random_hadamard_decode(tensor, dim, prng=rgen, frac=dim / (dim-ndropped))
+            tensor = random_hadamard_decode(tensor, dim, prng=self.rgen, frac=dim / (dim-ndropped))
 
         return tensor
 

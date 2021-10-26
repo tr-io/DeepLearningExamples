@@ -83,6 +83,7 @@ def train(index, args):
     drop_chance = args.drop_chance # drop chance
     runs = args.runs # number of runs to do
     hadamard = args.hadamard # whether or not to use the hadamard transform
+    node_rank = args.nr
 
     # setup data collection
     # aggregate training accuracy
@@ -122,7 +123,7 @@ def train(index, args):
 
         # wrap the model
         print("Creating model")
-        model = DDP(model, hadamard=hadamard, drop_chance=drop_chance, delay_allreduce=True)
+        model = DDP(model, hadamard=hadamard, drop_chance=drop_chance, rseed=node_rank)
 
         # Data loading code
         # downloading fashion mnist now
@@ -255,8 +256,8 @@ def main():
     # current rank of this node
     # 0 is the master process
     # goes from 0-args.nodes - 1
-    #parser.add_argument('-nr', '--nr', default=0, type=int,
-                        #help='ranking within the nodes')
+    parser.add_argument('-nr', '--nr', default=0, type=int,
+                        help='ranking within the nodes')
     # number of runs to do
     parser.add_argument('-rn', '--runs', default=10, type=int, help='number of runs to do training')
     # drop chance
@@ -269,6 +270,7 @@ def main():
     args = parser.parse_args()
 
     print("Running DDP!")
+    print(f"Node rank: {args.nr}")
     print(f"Local rank: {args.local_rank}")
 
     # multi processing stuff
