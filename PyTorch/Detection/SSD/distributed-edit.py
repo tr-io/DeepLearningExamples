@@ -204,10 +204,10 @@ class DistributedDataParallel(Module):
         self.drop_chance = drop_chance
         self.rseed = rseed
         self.sgen = torch.Generator(device='cuda')
-        self.sgen.manual_seed(self.rseed)
+        self.sgen.manual_seed(42)
 
         self.rgen = torch.Generator(device='cuda')
-        self.rgen.manual_seed(self.rseed)
+        self.rgen.manual_seed(42)
 
         self.tail = tail
 

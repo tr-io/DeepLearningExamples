@@ -1,5 +1,8 @@
 import os
 import sys
+import sqlite3
+import json
+
 from datetime import datetime
 import argparse
 import numpy as np
@@ -66,6 +69,10 @@ class FashionNet(nn.Module):
             nn.ReLU(), # after relu, shape: (batch_size, 64)
             nn.Linear(64, 10, bias=False) # output layer, after linear, shape: (batch_size, 10)
         )
+
+        # metadata params
+        self.model_name = "Toy Model"
+        self.dataset = "Fashion MNIST"
     
     def forward(self, x):
         out = self.layer1(x)
@@ -85,6 +92,11 @@ def train(index, args):
     hadamard = args.hadamard # whether or not to use the hadamard transform
     node_rank = args.nr
     tail = args.tail_drops
+    comm_backend = args.comm
+    setup = args.setup
+    # set metadata
+    model_name = ""
+    dataset = ""
 
     # setup data collection
     # aggregate training accuracy
@@ -100,7 +112,7 @@ def train(index, args):
 
     print("Initializing process group")
     # change these
-    dist.init_process_group(backend="nccl", init_method='env://')
+    dist.init_process_group(backend=comm_backend, init_method='env://')
 
     print("Getting world size")
     args.world_size = torch.distributed.get_world_size()
@@ -112,6 +124,11 @@ def train(index, args):
         train_acc_time = [] # training accuracy over time
         test_acc_time = [] # test accuracy over time
         model = FashionNet() # using fashionMNIST model now
+
+        # set metadata
+        dataset = model.dataset
+        model_name = model.model_name
+
         model = model.cuda()
         batch_size = 128
         # define loss function (criterion) and optimizer
@@ -213,6 +230,30 @@ def train(index, args):
             test_acc_time.insert(0, "Run:" + str(run))
             agg_test_acc.append(test_acc_time)
 
+    # consolidate aggregated training accuracy stats to dataframe
+    agg_acc_stats = np.array(agg_acc_stats)
+    df_acc = pd.DataFrame(data=agg_acc_stats[1:, 1:], index=agg_acc_stats[1:, 0], columns=agg_acc_stats[0, 1:])
+    train_row = df_acc.iloc[0]
+    train_acc_json = train_row.to_json(orient="columns")
+
+    # store into database
+    # db: ml-multicast.db
+    # schema: acc_experiments
+    drop_method = 0
+    if tail == 1:
+        drop_method = 1
+
+    if node_rank == 0:
+        # consolidate agg test acc to df
+        agg_test_acc = np.array(agg_test_acc)
+        df_test_acc = pd.DataFrame(data=agg_test_acc[1:, 1:], index=agg_test_acc[1:, 0], columns=agg_test_acc[0, 1:])
+        final_acc = df_test_acc.iloc[0]["Test Accuracy"]
+        con = sqlite3.connect('/home/ml-multicast.db')
+        cur = con.cursor()
+        cur.execute(f"INSERT INTO acc_experiments VALUES ('{model_name}', '{dataset}', '{setup}', '{comm_backend}', 'Ring', {args.nodes}, {args.epochs}, {drop_chance}, {drop_method}, {hadamard}, '', '{train_acc_json}', '', {float(final_acc)})")
+        con.commit()
+        con.close()
+    """
     if node_rank == 0:  
         # consolidate agg test acc to df
         agg_test_acc = np.array(agg_test_acc)
@@ -227,8 +268,10 @@ def train(index, args):
                 test_acc_path = "/data/%d-drop-nohd-rand-test-acc.csv" % (int(drop_chance * 100))
         with open(test_acc_path, 'w') as f:
             df_test_acc.to_csv(f)
+    """
 
     # consolidate aggregated training accuracy stats to dataframe
+    """
     agg_acc_stats = np.array(agg_acc_stats)
     df_acc = pd.DataFrame(data=agg_acc_stats[1:, 1:], index=agg_acc_stats[1:, 0], columns=agg_acc_stats[0, 1:])
     # save data to files
@@ -242,16 +285,7 @@ def train(index, args):
             acc_fpath = "/data/%d-drop-nohd-rand-train-acc.csv" % (int(drop_chance * 100))
     with open(acc_fpath, 'w') as f:
         df_acc.to_csv(f)
-        
-def find_free_port():
-    """ https://stackoverflow.com/questions/1365265/on-localhost-how-do-i-pick-a-free-port-number """
-    import socket
-    from contextlib import closing
-
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-        s.bind(('', 0))
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        return str(s.getsockname()[1])
+    """
 
 def main():
     parser = argparse.ArgumentParser()
@@ -259,13 +293,7 @@ def main():
     parser.add_argument("--local_rank", default=0, type=int)
     # nodes are the number of machines/workers
     parser.add_argument('-n', '--nodes', default=1, type=int, metavar='N')
-    # gpu is the number of gpus per machine to use
-    # ignore GPU for now, since we're doing cpu distributed
-    #parser.add_argument('-g', '--gpus', default=1, type=int,
-                        #help='number of gpus per node')
     # current rank of this node
-    # 0 is the master process
-    # goes from 0-args.nodes - 1
     parser.add_argument('-nr', '--nr', default=0, type=int,
                         help='ranking within the nodes')
     # number of runs to do
@@ -279,6 +307,11 @@ def main():
                         help='number of total epochs to run')
     # use hadamard transform or not
     parser.add_argument('-hd', '--hadamard', default=0, type=int, help='Use hadamard transform? 1 for yes, 0 for no (default is 0)')
+    
+    # metadata parameters
+    parser.add_argument('-sp', '--setup', default="AWS", type=str, help='Experiment hardware setup')
+    parser.add_argument('-cm', '--comm', default="nccl", type=str, help='Distributed learning communication backend')
+
     args = parser.parse_args()
 
     print("Running DDP!")
