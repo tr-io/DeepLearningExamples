@@ -319,8 +319,8 @@ def main():
     print(f"Local rank: {args.local_rank}")
 
     # multi processing stuff
-    #os.environ['MASTER_ADDR'] = '172.31.18.167'
-    #os.environ['MASTER_PORT'] = '12355'
+    os.environ['MASTER_ADDR'] = '172.31.18.167'
+    os.environ['MASTER_PORT'] = '12355'
     #os.environ['NCCL_SOCKET_IFNAME'] = 'ens5'
     #os.environ['RANK'] = str(args.local_rank)
     os.environ['NCCL_DEBUG'] = 'INFO'
