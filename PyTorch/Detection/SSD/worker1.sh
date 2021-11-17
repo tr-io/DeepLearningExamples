@@ -1,4 +1,4 @@
-
+#!/bin/bash
 python3 -m torch.distributed.launch --nproc_per_node=1 --nnodes=2 --node_rank=0 --master_addr="172.17.0.2" --master_port=12355 toy-ddp.py -rn 1 -dc 0.01 -hd 0 -nr 0 -n 2 --epochs 90 -sp "AWS" -cm "nccl"
 python3 -m torch.distributed.launch --nproc_per_node=1 --nnodes=2 --node_rank=0 --master_addr="172.17.0.2" --master_port=12355 toy-ddp.py -rn 1 -dc 0.02 -hd 0 -nr 0 -n 2 --epochs 90 -sp "AWS" -cm "nccl"
 python3 -m torch.distributed.launch --nproc_per_node=1 --nnodes=2 --node_rank=0 --master_addr="172.17.0.2" --master_port=12355 toy-ddp.py -rn 1 -dc 0.03 -hd 0 -nr 0 -n 2 --epochs 90 -sp "AWS" -cm "nccl"
