@@ -477,6 +477,16 @@ class DistributedDataParallel(Module):
         #print(f"drop vec: {dropped_idx}")
         tensor[dropped_idx] = 0
 
+        # do inverse hadamard
+        #print("Checking inverse hadamard")
+        if self.hadamard == 1:
+            tensor = random_hadamard_decode(tensor, dim, prng=self.rgen, frac=dim / (dim-ndropped))
+
+        print(f"Is tensor close to equal?")
+        print(torch.allclose(tensor, vec))
+        print(f"Tensor: {tensor}")
+        print(f"Vec: {vec}")
+
         with torch.cuda.stream(bucket_stream):
             # self.main_stream.wait_stream(torch.cuda.current_stream())
             # torch.cuda.synchronize()
@@ -514,16 +524,6 @@ class DistributedDataParallel(Module):
             # eventually go out of scope and die, at which point it could otherwise be freed for
             # further reuse by the main stream while the allreduce/div/unflatten are underway in bucket_stream.
             tensor.record_stream(bucket_stream)
-
-        # do inverse hadamard
-        #print("Checking inverse hadamard")
-        if self.hadamard == 1:
-            tensor = random_hadamard_decode(tensor, dim, prng=self.rgen, frac=dim / (dim-ndropped))
-
-        print(f"Is tensor close to equal?")
-        print(torch.allclose(tensor, vec))
-        print(f"Tensor: {tensor}")
-        print(f"Vec: {vec}")
 
         return tensor
 
