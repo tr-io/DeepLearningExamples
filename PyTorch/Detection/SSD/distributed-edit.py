@@ -469,12 +469,14 @@ class DistributedDataParallel(Module):
         # 2. create drop vector
         ndropped = int(np.round(self.drop_chance * tensor.numel()))
         print(f"ndropped: {ndropped}")
-        if self.tail == 1:
-            drop_range = dim - ndropped
-            dropped_idx = torch.arange(0, dim)
-            dropped_idx = dropped_idx[-ndropped:]
+        if ndropped != 0:
+            if self.tail == 1:
+                dropped_idx = torch.arange(0, dim)
+                dropped_idx = dropped_idx[-ndropped:]
+            else:
+                dropped_idx = torch.randperm(dim)[:ndropped]
         else:
-            dropped_idx = torch.randperm(dim)[:ndropped]
+            dropped_idx = []
         #print(f"drop vec: {dropped_idx}")
         print(f"drop vec: {dropped_idx}")
         tensor[dropped_idx] = 0
