@@ -468,6 +468,7 @@ class DistributedDataParallel(Module):
         torch.manual_seed(self.rseed)
         # 2. create drop vector
         ndropped = int(np.round(self.drop_chance * tensor.numel()))
+        print(f"ndropped: {ndropped}")
         if self.tail == 1:
             drop_range = dim - ndropped
             dropped_idx = torch.arange(0, dim)
@@ -475,6 +476,7 @@ class DistributedDataParallel(Module):
         else:
             dropped_idx = torch.randperm(dim)[:ndropped]
         #print(f"drop vec: {dropped_idx}")
+        print(f"drop vec: {dropped_idx}")
         tensor[dropped_idx] = 0
 
         # do inverse hadamard
