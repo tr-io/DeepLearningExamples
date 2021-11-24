@@ -475,12 +475,9 @@ class DistributedDataParallel(Module):
                 dropped_idx = dropped_idx[-ndropped:]
             else:
                 dropped_idx = torch.randperm(dim)[:ndropped]
-        else:
-            dropped_idx = []
-        #print(f"drop vec: {dropped_idx}")
-        print(f"drop vec: {dropped_idx}")
-        tensor[dropped_idx] = 0
-
+            print(f"drop vec: {dropped_idx}")
+            tensor[dropped_idx] = 0
+        
         # do inverse hadamard
         #print("Checking inverse hadamard")
         if self.hadamard == 1:
