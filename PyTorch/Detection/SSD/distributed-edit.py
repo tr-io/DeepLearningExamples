@@ -458,7 +458,7 @@ class DistributedDataParallel(Module):
         # apply hadamard transform if possible
         dim = len(tensor)
         #print("Checking Hadamard")
-        vec = tensor.clone()
+        #vec = tensor.clone()
         if self.hadamard == 1:
             tensor = random_hadamard_encode(tensor, dim, prng=self.sgen)
 
@@ -468,25 +468,18 @@ class DistributedDataParallel(Module):
         torch.manual_seed(self.rseed)
         # 2. create drop vector
         ndropped = int(np.round(self.drop_chance * tensor.numel()))
-        print(f"ndropped: {ndropped}")
         if ndropped != 0:
             if self.tail == 1:
                 dropped_idx = torch.arange(0, dim)
                 dropped_idx = dropped_idx[-ndropped:]
             else:
                 dropped_idx = torch.randperm(dim)[:ndropped]
-            print(f"drop vec: {dropped_idx}")
             tensor[dropped_idx] = 0
         
         # do inverse hadamard
         #print("Checking inverse hadamard")
         if self.hadamard == 1:
             tensor = random_hadamard_decode(tensor, dim, prng=self.rgen, frac=dim / (dim-ndropped))
-
-        print(f"Is tensor close to equal?")
-        print(torch.allclose(tensor, vec))
-        print(f"Tensor: {tensor}")
-        print(f"Vec: {vec}")
 
         with torch.cuda.stream(bucket_stream):
             # self.main_stream.wait_stream(torch.cuda.current_stream())
